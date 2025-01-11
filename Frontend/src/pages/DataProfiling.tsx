@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface ProfilingResult {
   filename: string;
@@ -13,6 +14,8 @@ const DataProfiling: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [profilingResults, setProfilingResults] = useState<ProfilingResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<ProfilingResult | null>(null);
+
+  const navigate = useNavigate();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -35,9 +38,10 @@ const DataProfiling: React.FC = () => {
         method: "POST",
         body: formData,
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = JSON.parse(text.replace(/NaN/g, "null"));
       if (response.ok) {
-        alert("File uploaded successfully!");
+        navigate('/visual');
         fetchProfilingResults(); // Refresh results after upload
       } else {
         alert(data.error || "File upload failed.");
@@ -52,7 +56,8 @@ const DataProfiling: React.FC = () => {
       const response = await fetch("http://localhost:8000/api/tableau/results/", {
         method: "GET",
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = JSON.parse(text.replace(/NaN/g, "null"));
       if (response.ok) {
         setProfilingResults(data.data || []);
       } else {
