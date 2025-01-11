@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { Link, useNavigate, NavigateFunction } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 
 const SignupSchema = Yup.object().shape({
   name: Yup.string().required('Required'),
   email: Yup.string().email('Invalid email').required('Required'),
-  password: Yup.string()
-    .required('Required'),
+  password: Yup.string().required('Required'),
   confirm_password: Yup.string()
-    .oneOf([Yup.ref('password'), undefined], 'Passwords must match')
+    .oneOf([Yup.ref('password')], 'Passwords must match')
     .required('Required'),
 });
 
 const Signup: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
-  const navigate: NavigateFunction = useNavigate();
+  const navigate = useNavigate();
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
     try {
@@ -32,7 +31,8 @@ const Signup: React.FC = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        navigate('/dataprofile');
+        alert(data.message);
+        navigate('/login'); // Navigate to login on successful signup
       } else {
         setError(data.error || "Registration failed");
       }
@@ -84,7 +84,7 @@ const Signup: React.FC = () => {
           </Formik>
           <p className="mt-4 text-center text-gray-600">
             Already have an account?{' '}
-            <Link to="/" className="text-indigo-600 hover:underline">
+            <Link to="/login" className="text-indigo-600 hover:underline">
               Login
             </Link>
           </p>
@@ -95,4 +95,3 @@ const Signup: React.FC = () => {
 };
 
 export default Signup;
-

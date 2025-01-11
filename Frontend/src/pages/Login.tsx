@@ -17,13 +17,16 @@ const Login: React.FC = () => {
       const response = await fetch("http://localhost:8000/api/tableau/login_user/", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+            "Content-Type": "application/json",
         },
         body: JSON.stringify(values),
-      });
+        credentials: "include", // Ensure cookies are included
+    });
+  
       const data = await response.json();
       if (response.ok) {
-        navigate('/dataprofile');
+        alert(data.message);
+        navigate(`/dashboard/${data.user_id}`); // Redirect to user-specific dashboard
       } else {
         setError(data.error || "Login failed");
       }

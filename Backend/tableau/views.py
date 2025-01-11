@@ -1,85 +1,162 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework import status
+from django.shortcuts import render
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
-from django.contrib.auth.hashers import make_password, check_password
+from django.contrib.auth.hashers import check_password, make_password
 from pymongo import MongoClient
+from django.http import JsonResponse
 from bson import ObjectId
-import json
+from datetime import datetime, timedelta
+import jwt
+import logging
+from django.views.decorators.csrf import csrf_exempt
 import os
 from django.core.files.storage import FileSystemStorage
 import pandas as pd
+import json
 
-
-# MongoDB connection settings
-MONGODB_URI = "mongodb+srv://ajaysihub:nrwULVWz8ysWBGK5@projects.dfhvc.mongodb.net/"
-MONGO_DB_NAME = "kutty_tableau"
-
-# Connect to MongoDB
-client = MongoClient(MONGODB_URI)
-db = client[MONGO_DB_NAME]
-users_collection  = db["users"]  # Collection name updated to User_Info
+# MongoDB connection
+client = MongoClient("mongodb+srv://ajaysihub:nrwULVWz8ysWBGK5@projects.dfhvc.mongodb.net/")
+db = client["kutty_tableau"]
+users_collection = db["users"]
 data_profiling_collection = db["DataProfiling"]
+
+# Logger setup
+logger = logging.getLogger(__name__)
+
+# JWT Secret and Algorithm
+JWT_SECRET = "django-insecure-%1l2^d$2q8xuwtmv-z=_!&529loppvl)ikcs0&ef=safzcn=uw"  # Replace later with .env variable
+JWT_ALGORITHM = "HS256"
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@api_view(['POST'])
-def register_user(request):
-    data = request.data
-    name = data.get('name')
-    email = data.get('email')
-    password = data.get('password')
-
-    if not name or not email or not password:
-        return Response({'error': 'Name, email, and password are required'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check if the email already exists
-    if users_collection.find_one({'email': email}):
-        return Response({'error': 'Email already exists'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Hash the password
-    hashed_password = make_password(password)
-
-    # Create the user document
-    user_document = {
-        'name': name,
-        'email': email,
-        'password': hashed_password
+def generate_tokens(user_id):
+    """
+    Generate JWT token for the given user.
+    """
+    access_payload = {
+        "user_id": str(user_id),
+        "exp": datetime.utcnow() + timedelta(hours=1),  # Token expiration: 1 hour
+        "iat": datetime.utcnow(),
     }
 
-    # Insert the user document into the collection
-    result = users_collection.insert_one(user_document)
+    token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {"jwt": token}
 
-    # Generate user_id using the ObjectId
-    user_id = str(result.inserted_id)
+@api_view(["OPTIONS", "POST"])
+@permission_classes([AllowAny])
+def user_login(request):
+    if request.method == "OPTIONS":
+        # Handle preflight requests
+        response = JsonResponse({"message": "Preflight successful"})
+        response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response["Access-Control-Allow-Headers"] = "Content-Type"
+        return response
+    """
+    Handles user login.
+    """
+    try:
+        data = request.data
+        email = data.get("email")
+        password = data.get("password")
 
-    # Update the user document to include the user_id
-    users_collection.update_one(
-        {'_id': result.inserted_id},
-        {'$set': {'user_id': user_id}}
-    )
+        if not email or not password:
+            logger.warning("Login failed: Missing email or password")
+            return Response({"error": "Email and password are required"}, status=400)
 
-    return Response({'message': 'User registered successfully', 'user_id': user_id}, status=status.HTTP_201_CREATED)
+        user = users_collection.find_one({"email": email})
+        if not user or not check_password(password, user["password"]):
+            logger.warning("Login failed: Invalid email or password")
+            return Response({"error": "Invalid email or password"}, status=401)
 
-@api_view(['POST'])
-def login_user(request):
-    data = request.data
-    email = data.get('email')
-    password = data.get('password')
+        user_id = str(user["_id"])
+        tokens = generate_tokens(user_id)
 
-    if not email or not password:
-        return Response({'error': 'Email and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+        response = Response({
+            "message": "Login successful",
+            "user_id": user_id,
+            "name": user["name"],
+            "email": user["email"],
+        }, status=200)
 
-    # Find the user by email
-    user = users_collection.find_one({'email': email})
+        response.set_cookie(
+        key="jwt",
+        value=tokens["jwt"],
+        httponly=True,
+        samesite="Lax",  # Use 'None' with HTTPS
+        secure=False,    # Set to True in production with HTTPS
+        max_age=1 * 60 * 60  # 1 hour expiration
+)
 
-    if user and check_password(password, user['password']):
-        return Response({'message': 'Login successful', 'user_id': user['user_id']}, status=status.HTTP_200_OK)
-    else:
-        return Response({'error': 'Invalid email or password'}, status=status.HTTP_401_UNAUTHORIZED)
-    
+        logger.info(f"Login successful for user: {email}")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error during login: {e}")
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def user_signup(request):
+    """
+    Handles user registration.
+    """
+    try:
+        data = request.data
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
+
+        if not name or not email or not password:
+            logger.warning("Signup failed: Missing required fields")
+            return Response({"error": "Name, email, and password are required"}, status=400)
+
+        # Check if email already exists
+        if users_collection.find_one({"email": email}):
+            logger.warning(f"Signup failed: Email {email} already exists")
+            return Response({"error": "Email already exists"}, status=400)
+
+        # Save user in MongoDB
+        hashed_password = make_password(password)
+        user_data = {
+            "name": name,
+            "email": email,
+            "password": hashed_password,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
+        result = users_collection.insert_one(user_data)
+        user_id = str(result.inserted_id)
+
+        logger.info(f"Signup successful for user: {email}")
+        return Response({"message": "Signup successful", "user_id": user_id}, status=201)
+
+    except Exception as e:
+        logger.error(f"Error during signup: {e}")
+        return Response({"error": "Something went wrong. Please try again later."}, status=500)
+
+@api_view(["GET"])
+def user_dashboard(request, user_id):
+    """
+    Retrieve user-specific data based on user ID.
+    """
+    try:
+        # Fetch user data by user_id from MongoDB
+        user = users_collection.find_one({"_id": ObjectId(user_id)}, {"password": 0})
+        if not user:
+            return Response({"error": "User not found"}, status=404)
+
+        # Convert ObjectId to string
+        user["_id"] = str(user["_id"])
+
+        return Response({"data": user}, status=200)
+
+    except Exception as e:
+        logger.error(f"Error fetching dashboard data: {e}")
+        return Response({"error": "Something went wrong. Please try again later."}, status=500)
+
+
 @csrf_exempt
 def upload_file(request):
     if request.method == 'POST' and request.FILES.get('dataset'):
