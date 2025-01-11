@@ -6,10 +6,9 @@ import * as Yup from 'yup';
 const SignupSchema = Yup.object().shape({
   name: Yup.string().required('Required'),
   email: Yup.string().email('Invalid email').required('Required'),
-  password: Yup.string()
-    .required('Required'),
+  password: Yup.string().required('Required'),
   confirm_password: Yup.string()
-    .oneOf([Yup.ref('password'), undefined], 'Passwords must match')
+    .oneOf([Yup.ref('password')], 'Passwords must match')
     .required('Required'),
 });
 
@@ -33,7 +32,7 @@ const Signup: React.FC = () => {
       const data = await response.json();
       if (response.ok) {
         alert(data.message);
-        navigate('/');
+        navigate('/login'); // Navigate to login on successful signup
       } else {
         setError(data.error || "Registration failed");
       }
