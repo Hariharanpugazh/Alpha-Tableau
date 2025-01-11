@@ -9,12 +9,17 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 import jwt
 import logging
-
+from django.views.decorators.csrf import csrf_exempt
+import os
+from django.core.files.storage import FileSystemStorage
+import pandas as pd
+import json
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://ajaysihub:nrwULVWz8ysWBGK5@projects.dfhvc.mongodb.net/")
 db = client["kutty_tableau"]
 users_collection = db["users"]
+data_profiling_collection = db["DataProfiling"]
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -22,6 +27,9 @@ logger = logging.getLogger(__name__)
 # JWT Secret and Algorithm
 JWT_SECRET = "django-insecure-%1l2^d$2q8xuwtmv-z=_!&529loppvl)ikcs0&ef=safzcn=uw"  # Replace later with .env variable
 JWT_ALGORITHM = "HS256"
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def generate_tokens(user_id):
     """
@@ -149,73 +157,78 @@ def user_dashboard(request, user_id):
         return Response({"error": "Something went wrong. Please try again later."}, status=500)
 
 
-    
-# @csrf_exempt
-# def upload_file(request):
-#     if request.method == 'POST' and request.FILES.get('dataset'):
-#         try:
-#             dataset = request.FILES['dataset']
-#             fs = FileSystemStorage(location=UPLOAD_DIR)
-#             file_path = fs.save(dataset.name, dataset)
-#             file_full_path = os.path.join(UPLOAD_DIR, file_path)
+@csrf_exempt
+def upload_file(request):
+    if request.method == 'POST' and request.FILES.get('dataset'):
+        try:
+            dataset = request.FILES['dataset']
+            fs = FileSystemStorage(location=UPLOAD_DIR)
+            file_path = fs.save(dataset.name, dataset)
+            file_full_path = os.path.join(UPLOAD_DIR, file_path)
 
-#             # Process the uploaded file
-#             profiling_results = process_dataset(file_full_path)
+            # Process the uploaded file
+            profiling_results = process_dataset(file_full_path)
 
-#             # Save results to MongoDB
-#             data_entry = {
-#                 "filename": dataset.name,
-#                 "results": profiling_results
-#             }
-#             data_profiling_collection.insert_one(data_entry)
+            # Save results to MongoDB
+            data_entry = {
+                "filename": dataset.name,
+                "results": profiling_results
+            }
+            data_profiling_collection.insert_one(data_entry)
 
-#             # Remove the uploaded file after processing
-#             os.remove(file_full_path)
+            # Remove the uploaded file after processing
+            os.remove(file_full_path)
 
-#             return JsonResponse({"message": "File processed and saved successfully.", "results": profiling_results}, status=201)
-#         except Exception as e:
-#             return JsonResponse({"error": str(e)}, status=500)
-#     else:
-#         return JsonResponse({"error": "No file uploaded."}, status=400)
+            return JsonResponse({"message": "File processed and saved successfully.", "results": profiling_results}, status=201)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    else:
+        return JsonResponse({"error": "No file uploaded."}, status=400)
 
 
-# def process_dataset(file_path):
-#     # Example processing function (adjust as needed)
-#     try:
-#         df = pd.read_csv(file_path)
-#         profiling_results = {
-#             "columns": list(df.columns),
-#             "row_count": len(df),
-#             "summary": df.describe(include='all').to_dict()
-#         }
-#         return profiling_results
-#     except Exception as e:
-#         return {"error": f"Error processing file: {str(e)}"}
+def process_dataset(file_path):
+    # Example processing function (adjust as needed)
+    try:
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        elif file_path.endswith(('.xls', '.xlsx')):  # Check for excel file formats
+            df = pd.read_excel(file_path)
+        else:
+            return json.dumps({"error": "Unsupported file format."})
 
-# @csrf_exempt
-# def get_profiling_results(request):
-#     if request.method == "GET":
-#         try:
-#             results = list(data_profiling_collection.find({}, {"_id": 0}))
-#             return JsonResponse({"data": results}, status=200)
-#         except Exception as e:
-#             return JsonResponse({"error": str(e)}, status=500)
+        profiling_results = {
+            "columns": list(df.columns),
+            "row_count": len(df),
+            "summary": df.describe(include='all').to_dict()
+        }
+        return profiling_results
+    except Exception as e:
+        return {"error": f"Error processing file: {str(e)}"}
 
-# @csrf_exempt
-# def delete_profiling_result(request):
-#     if request.method == "POST":
-#         try:
-#             data = json.loads(request.body)
-#             filename = data.get("filename")
+@csrf_exempt
+def get_profiling_results(request):
+    if request.method == "GET":
+        try:
+            results = list(data_profiling_collection.find({}, {"_id": 0}))
+            return JsonResponse({"data": results}, status=200)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
 
-#             if not filename:
-#                 return JsonResponse({"error": "Filename is required."}, status=400)
+@csrf_exempt
+def delete_profiling_result(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            filename = data.get("filename")
 
-#             result = data_profiling_collection.delete_one({"filename": filename})
+            if not filename:
+                return JsonResponse({"error": "Filename is required."}, status=400)
 
-#             if result.deleted_count == 0:
-#                 return JsonResponse({"error": "No such file found."}, status=404)
+            result = data_profiling_collection.delete_one({"filename": filename})
 
-#             return JsonResponse({"message": "File profiling result deleted successfully."}, status=200)
-#         except Exception as e:
-#             return JsonResponse({"error": str(e)}, status=500)
+            if result.deleted_count == 0:
+                return JsonResponse({"error": "No such file found."}, status=404)
+
+            return JsonResponse({"message": "File profiling result deleted successfully."}, status=200)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
