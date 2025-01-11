@@ -112,7 +112,13 @@ def upload_file(request):
 def process_dataset(file_path):
     # Example processing function (adjust as needed)
     try:
-        df = pd.read_csv(file_path)
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        elif file_path.endswith(('.xls', '.xlsx')):  # Check for excel file formats
+            df = pd.read_excel(file_path)
+        else:
+            return json.dumps({"error": "Unsupported file format."})
+
         profiling_results = {
             "columns": list(df.columns),
             "row_count": len(df),

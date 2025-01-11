@@ -23,8 +23,7 @@ const Login: React.FC = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        alert(data.message);
-        navigate('/admin-home');
+        navigate('/dataprofile');
       } else {
         setError(data.error || "Login failed");
       }

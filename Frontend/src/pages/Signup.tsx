@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, NavigateFunction } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 
@@ -15,7 +15,7 @@ const SignupSchema = Yup.object().shape({
 
 const Signup: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
+  const navigate: NavigateFunction = useNavigate();
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
     try {
@@ -32,8 +32,7 @@ const Signup: React.FC = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        alert(data.message);
-        navigate('/');
+        navigate('/dataprofile');
       } else {
         setError(data.error || "Registration failed");
       }
@@ -85,7 +84,7 @@ const Signup: React.FC = () => {
           </Formik>
           <p className="mt-4 text-center text-gray-600">
             Already have an account?{' '}
-            <Link to="/login" className="text-indigo-600 hover:underline">
+            <Link to="/" className="text-indigo-600 hover:underline">
               Login
             </Link>
           </p>
@@ -96,3 +95,4 @@ const Signup: React.FC = () => {
 };
 
 export default Signup;
+
