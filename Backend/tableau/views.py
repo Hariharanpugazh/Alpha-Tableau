@@ -16,11 +16,19 @@ import pandas as pd
 import numpy as np
 import chardet
 from scipy.stats import zscore
+import smtplib
+import random
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import string
+from django.core.mail import send_mail
+from django.conf import settings
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://ajaysihub:nrwULVWz8ysWBGK5@projects.dfhvc.mongodb.net/")
 db = client["kutty_tableau"]
 users_collection = db["users"]
+otp_collection = db["otp_verification"]
 data_profiling_collection = db["Data Profile"]
 
 # Logger setup
@@ -29,9 +37,6 @@ logger = logging.getLogger(__name__)
 # JWT Secret and Algorithm
 JWT_SECRET = "django-insecure-%1l2^d$2q8xuwtmv-z=_!&529loppvl)ikcs0&ef=safzcn=uw"  # Replace later with .env variable
 JWT_ALGORITHM = "HS256"
-
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def generate_tokens(user_id):
     """
@@ -139,6 +144,178 @@ def user_signup(request):
         return Response({"error": "Something went wrong. Please try again later."}, status=500)
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
+def get_user_info(request):
+    """
+    Fetch user information for the logged-in user.
+    """
+    try:
+        # Get the JWT token from cookies
+        token = request.COOKIES.get("jwt")
+        if not token:
+            return Response({"error": "Unauthorized"}, status=401)
+
+        # Decode the token
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            return Response({"error": "Token has expired"}, status=401)
+        except jwt.InvalidTokenError:
+            return Response({"error": "Invalid token"}, status=401)
+
+        # Fetch the user data from MongoDB
+        user_id = payload["user_id"]
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+
+        if not user:
+            return Response({"error": "User not found"}, status=404)
+
+        # Return user information
+        return Response({
+            "user_id": str(user["_id"]),
+            "name": user["name"],
+            "email": user["email"],
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Error fetching user info: {e}")
+        return Response({"error": "Something went wrong"}, status=500)
+
+#otp
+def send_otp_email(email, otp):
+    sender_email = "kuttytableau@gmail.com"
+    sender_password = "qpwiuskxjnwpvsyv"
+    subject = "Your OTP Verification Code"
+    body = f"Your OTP code is {otp}. It is valid for 5 minutes."
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, email, msg.as_string())
+        server.quit()
+    except Exception as e:
+        raise Exception(f"Failed to send email: {e}")
+    
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_otp(request):
+    try:
+        data = request.data
+        email = data.get("email")
+        otp = int(data.get("otp"))  # Ensure OTP is treated as string
+
+        # Find OTP record in the database
+        record = otp_collection.find_one({"email": email, "otp": otp})
+        
+        # Debugging: Log the found record
+        print("Record found:", record)
+        
+        if not record:
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+
+        # Check if OTP is expired
+        if datetime.utcnow() > record["expires_at"]:
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+
+        # Delete the OTP record after successful verification
+        otp_collection.delete_one({"_id": record["_id"]})
+        
+        # Hash the password and create the user
+        hashed_password = make_password(data.get("password"))
+        users_collection.insert_one({
+            "name": data.get("name"),
+            "email": email,
+            "password": hashed_password,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        })
+
+        return Response({"message": "User registered successfully"}, status=201)
+
+    except Exception as e:
+        print("Error occurred during OTP verification:", str(e))
+        return Response({"error": "Something went wrong. Please try again later."}, status=500) 
+
+#forgot password
+def generate_reset_token():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password(request):
+    try:
+        email = request.data.get('email')
+
+        # Check if the email exists in the system
+        user = users_collection.find_one({"email": email})
+        if not user:
+            return Response({"error": "Email not found"}, status=400)
+
+        # Generate reset token and store it
+        reset_token = generate_reset_token()
+
+        # Store token in the database with expiration time (e.g., 1 hour)
+        expiration_time = datetime.utcnow() + timedelta(hours=1)
+        users_collection.update_one(
+            {"email": email},
+            {"$set": {"password_reset_token": reset_token, "password_reset_expires": expiration_time}}
+        )
+
+        # Send the reset token via email (you can customize the email content)
+        send_mail(
+            'Password Reset Request',
+            f'Use this token to reset your password: {reset_token}',
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+        )
+
+        return Response({"message": "Password reset link sent to your email"}, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def reset_password(request):
+    try:
+        email = request.data.get('email')
+        token = request.data.get('token')
+        new_password = request.data.get('password')
+
+        # Find the user by email and validate token
+        user = users_collection.find_one({"email": email})
+        if not user or user.get('password_reset_token') != token:
+            return Response({"error": "Invalid token"}, status=400)
+
+        # Check if token is expired
+        if datetime.utcnow() > user.get('password_reset_expires'):
+            return Response({"error": "Token has expired"}, status=400)
+
+        # Hash the new password
+        hashed_password = make_password(new_password)
+
+        # Update the user's password and clear the reset token
+        users_collection.update_one(
+            {"email": email},
+            {"$set": {"password": hashed_password, "password_reset_token": None, "password_reset_expires": None}}
+        )
+
+        return Response({"message": "Password reset successful"}, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+ 
+
+@api_view(["GET"])
 def user_dashboard(request, user_id):
     """
     Retrieve user-specific data based on user ID.
@@ -157,162 +334,3 @@ def user_dashboard(request, user_id):
     except Exception as e:
         logger.error(f"Error fetching dashboard data: {e}")
         return Response({"error": "Something went wrong. Please try again later."}, status=500)
-
-
-@csrf_exempt
-def upload_and_process_data(request):
-    """
-    Handles file uploads, processes data, and stores profiling results in MongoDB.
-    """
-    if request.method == 'POST' and request.FILES.get('dataset'):
-        try:
-            # Extract the file and user ID from the request
-            dataset = request.FILES['dataset']
-            user_id = request.POST.get('user_id')
-
-            if not user_id:
-                return JsonResponse({"error": "user_id is required."}, status=400)
-
-            # Generate a unique upload ID
-            upload_id = str(ObjectId())
-
-            # Process the uploaded file
-            file_name = dataset.name
-            file_content = dataset.read()  # Read file content
-            profiling_results = process_dataset(file_content, file_name)
-
-            if "error" in profiling_results:
-                return JsonResponse({"error": profiling_results["error"]}, status=400)
-
-            # Save results to MongoDB
-            data_entry = {
-                "upload_id": upload_id,
-                "user_id": user_id,
-                "filename": file_name,
-                "results": profiling_results,
-            }
-            data_profiling_collection.insert_one(data_entry)
-
-            return JsonResponse(
-                {
-                    "message": "File processed and saved successfully.",
-                    "upload_id": upload_id,
-                    "results": profiling_results,
-                },
-                status=201,
-            )
-        except Exception as e:
-            logger.error(f"Error processing file upload: {str(e)}")
-            return JsonResponse({"error": str(e)}, status=500)
-    else:
-        return JsonResponse({"error": "No file uploaded or invalid request method."}, status=400)
-    
-def detect_encoding(file_content):
-    result = chardet.detect(file_content)
-    return result['encoding']
-
-def process_dataset(file_content, file_name):
-    try:
-        if file_name.endswith('.csv'):
-            # Detect encoding
-            encoding = detect_encoding(file_content)
-            df = pd.read_csv(pd.io.common.BytesIO(file_content), encoding=encoding)
-        elif file_name.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(pd.io.common.BytesIO(file_content))
-        else:
-            return {"error": "Unsupported file format."}
-
-        # Clean column names
-        df.columns = df.columns.str.strip()
-
-        # Data Overview
-        data_overview = {
-            "columns": list(df.columns),
-            "row_count": len(df),
-            "data_types": df.dtypes.astype(str).to_dict(),
-        }
-
-        # Statistical Summary
-        summary = df.describe(include="all").fillna('null').to_dict()
-
-        # Handle datetime columns separately
-        datetime_cols = df.select_dtypes(include=['datetime64']).columns
-        if not datetime_cols.empty:
-            datetime_summary = {
-                col: {
-                    "min": str(df[col].min()),
-                    "max": str(df[col].max()),
-                    "unique": df[col].nunique(),
-                }
-                for col in datetime_cols
-            }
-        else:
-            datetime_summary = {}
-
-        # Data Relationships (correlations)
-        numeric_cols = df.select_dtypes(include=np.number)
-        correlations = (
-            numeric_cols.corr().fillna('null').to_dict() if not numeric_cols.empty else {}
-        )
-
-        # Data Quality Metrics
-        duplicates = len(df[df.duplicated()])
-        null_values = df.isnull().sum().to_dict()
-        outliers = {
-            col: df[(zscore(df[col].dropna()) > 3)].shape[0] if col in numeric_cols else 0
-            for col in df.columns
-        }
-
-        data_quality = {
-            "duplicates": duplicates,
-            "null_values": null_values,
-            "outliers": outliers,
-        }
-
-        # Data Preview
-        data_preview = df.head(5).to_dict(orient='records')
-
-        # Generate profiling results
-        profiling_results = {
-            "data_overview": data_overview,
-            "summary": summary,
-            "datetime_summary": datetime_summary,
-            "relationships": correlations,
-            "data_quality": data_quality,
-            "data_preview": data_preview,
-        }
-
-        return profiling_results
-    except Exception as e:
-        logger.error(f"Error processing dataset: {str(e)}")
-        return {"error": f"Error processing file: {str(e)}"}
-
-@csrf_exempt
-def get_visualization_data(request, upload_id):
-    """
-    Fetch visualization data for the given upload_id.
-    """
-    if request.method == 'GET':
-        try:
-            # Find the data in MongoDB by upload_id
-            data_entry = data_profiling_collection.find_one({"upload_id": upload_id})
-            if not data_entry:
-                return JsonResponse({"error": "Data not found for the given upload_id."}, status=404)
-
-            # Prepare data for response
-            results = data_entry["results"]
-            response_data = {
-                "data_overview": results.get("data_overview", {}),
-                "summary": results.get("summary", {}),
-                "datetime_summary": results.get("datetime_summary", {}),
-                "relationships": results.get("relationships", {}),
-                "data_quality": results.get("data_quality", {}),
-                "data_preview": results.get("data_preview", []),
-            }
-
-            return JsonResponse({"message": "Data fetched successfully.", "data": response_data}, status=200)
-        except Exception as e:
-            logger.error(f"Error fetching visualization data: {str(e)}")
-            return JsonResponse({"error": str(e)}, status=500)
-    else:
-        return JsonResponse({"error": "Invalid request method."}, status=400)

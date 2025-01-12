@@ -61,7 +61,7 @@ const Login: React.FC = () => {
                   {errors.password && touched.password && <div className="text-red-500 text-sm mt-1">{errors.password}</div>}
                 </div>
                 <div className="flex justify-end">
-                  <Link to="/forgot-password" className="text-sm text-indigo-600 hover:underline">
+                  <Link to="/forgot_password" className="text-sm text-indigo-600 hover:underline">
                     Forgot password?
                   </Link>
                 </div>

@@ -4,9 +4,32 @@ import { Table, Tabs, Tab, Card, Pagination, Accordion } from 'react-bootstrap';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Header from '../components/Header.tsx';
 
+interface DataType {
+  summary: {
+    [column: string]: {
+      [metric: string]: string | number; // Define the expected type of values in summary
+    };
+  };
+  relationships: {
+    [key: string]: {
+      [subKey: string]: number | string; // Ensure number for correlations
+    };
+  };
+  data_overview: {
+    columns: string[];
+    row_count: number;
+    data_types: { Column: string; Type: string }[];
+  };
+  data_quality: {
+    null_values: { Column: string; 'Null Count': number }[];
+    outliers: { Column: string; 'Outlier Count': number }[];
+  };
+  data_preview: { [key: string]: string | number }[];
+}
+
 const VisualizeResult: React.FC = () => {
   const { upload_id } = useParams<{ upload_id: string }>();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DataType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('Overview');
@@ -123,43 +146,48 @@ const VisualizeResult: React.FC = () => {
     </div>
   );
 
-  const renderOverview = () => (
-    <Card>
-      <Card.Body>
-        <h5>Columns</h5>
-        <p>{data.data_overview.columns.join(', ')}</p>
-        <h5>Row Count</h5>
-        <p>{data.data_overview.row_count}</p>
-        <h5>Data Types</h5>
-        {renderTable(
-          ['Column', 'Type'],
-          paginate(
-            data.data_overview.data_types.map((entry: any) => ({
-              Column: entry.Column,
-              Type: entry.Type,
-            })),
-            currentPage,
-            itemsPerPage
-          ),
-          'Data Types for Each Column'
-        )}
-        {renderPagination(data.data_overview.data_types.length)}
-      </Card.Body>
-    </Card>
-  );
+  const renderOverview = () => {
+    if (!data) return null;
+  
+    return (
+      <Card>
+        <Card.Body>
+          <h5>Columns</h5>
+          <p>{data.data_overview.columns.join(', ')}</p>
+          <h5>Row Count</h5>
+          <p>{data.data_overview.row_count}</p>
+          <h5>Data Types</h5>
+          {renderTable(
+            ['Column', 'Type'],
+            paginate(
+              data.data_overview.data_types.map((entry) => ({
+                Column: entry.Column,
+                Type: entry.Type,
+              })),
+              currentPage,
+              itemsPerPage
+            ),
+            'Data Types for Each Column'
+          )}
+          {renderPagination(data.data_overview.data_types.length)}
+        </Card.Body>
+      </Card>
+    );
+  };
+  
   
 
   const renderSummary = () => {
-    const summaryData = Object.entries(data.summary)
-      .map(([column, summary]) =>
-        Object.entries(summary).map(([metric, value]) => ({
-          Metric: `${column} - ${metric}`,
-          Value: value,
-        }))
-      )
-      .flat();
+    if (!data) return null;
+  
+    const summaryData = Object.entries(data.summary).flatMap(([column, summary]) =>
+      Object.entries(summary).map(([metric, value]) => ({
+        Metric: `${column} - ${metric}`,
+        Value: value,
+      }))
+    );
     const paginatedData = paginate(summaryData, currentPage, itemsPerPage);
-
+  
     return (
       <Card>
         <Card.Body>
@@ -175,16 +203,16 @@ const VisualizeResult: React.FC = () => {
   };
 
   const renderRelationships = () => {
-    const relationshipsData = Object.entries(data.relationships)
-      .map(([key, values]) =>
-        Object.entries(values).map(([subKey, subValue]) => ({
-          Metric: `${key} ↔ ${subKey}`,
-          Value: typeof subValue === 'number' ? subValue.toFixed(3) : subValue, // Ensure .toFixed is used only on numbers
-        }))
-      )
-      .flat();
+    if (!data) return null;
+  
+    const relationshipsData = Object.entries(data.relationships).flatMap(([key, values]) =>
+      Object.entries(values).map(([subKey, subValue]) => ({
+        Metric: `${key} ↔ ${subKey}`,
+        Value: typeof subValue === 'number' ? subValue.toFixed(3) : subValue,
+      }))
+    );
     const paginatedData = paginate(relationshipsData, currentPage, itemsPerPage);
-
+  
     return (
       <Card>
         <Card.Body>
@@ -198,67 +226,74 @@ const VisualizeResult: React.FC = () => {
       </Card>
     );
   };
+  
 
-  const renderQuality = () => (
-    <Card>
-      <Card.Body>
-        <Accordion>
-          {/* Null Values Section */}
-          <Accordion.Item eventKey="0">
-            <Accordion.Header>Null Values</Accordion.Header>
-            <Accordion.Body>
-              {renderTable(
-                ['Column', 'Null Count'],
-                paginate(
-                  data.data_quality.null_values.map((entry: any) => ({
-                    Column: entry.Column,
-                    'Null Count': entry['Null Count'],
-                  })),
-                  currentPage,
-                  itemsPerPage
-                ),
-                'Null Values in Each Column'
-              )}
-              {renderPagination(data.data_quality.null_values.length)}
-            </Accordion.Body>
-          </Accordion.Item>
+  const renderQuality = () => {
+    if (!data) return null;
   
-          {/* Outliers Section */}
-          <Accordion.Item eventKey="1">
-            <Accordion.Header>Outliers</Accordion.Header>
-            <Accordion.Body>
-              {renderTable(
-                ['Column', 'Outlier Count'],
-                paginate(
-                  data.data_quality.outliers.map((entry: any) => ({
-                    Column: entry.Column,
-                    'Outlier Count': entry['Outlier Count'],
-                  })),
-                  currentPage,
-                  itemsPerPage
-                ),
-                'Outliers Detected in Each Column'
-              )}
-              {renderPagination(data.data_quality.outliers.length)}
-            </Accordion.Body>
-          </Accordion.Item>
-        </Accordion>
-      </Card.Body>
-    </Card>
-  );
+    return (
+      <Card>
+        <Card.Body>
+          <Accordion>
+            <Accordion.Item eventKey="0">
+              <Accordion.Header>Null Values</Accordion.Header>
+              <Accordion.Body>
+                {renderTable(
+                  ['Column', 'Null Count'],
+                  paginate(
+                    data.data_quality.null_values.map((entry) => ({
+                      Column: entry.Column,
+                      'Null Count': entry['Null Count'],
+                    })),
+                    currentPage,
+                    itemsPerPage
+                  ),
+                  'Null Values in Each Column'
+                )}
+                {renderPagination(data.data_quality.null_values.length)}
+              </Accordion.Body>
+            </Accordion.Item>
+            <Accordion.Item eventKey="1">
+              <Accordion.Header>Outliers</Accordion.Header>
+              <Accordion.Body>
+                {renderTable(
+                  ['Column', 'Outlier Count'],
+                  paginate(
+                    data.data_quality.outliers.map((entry) => ({
+                      Column: entry.Column,
+                      'Outlier Count': entry['Outlier Count'],
+                    })),
+                    currentPage,
+                    itemsPerPage
+                  ),
+                  'Outliers Detected in Each Column'
+                )}
+                {renderPagination(data.data_quality.outliers.length)}
+              </Accordion.Body>
+            </Accordion.Item>
+          </Accordion>
+        </Card.Body>
+      </Card>
+    );
+  };
   
-  const renderPreview = () => (
-    <Card>
-      <Card.Body>
-        {renderTable(
-          Object.keys(data.data_preview[0]),
-          paginate(data.data_preview, currentPage, itemsPerPage),
-          'Sample Data Preview (Top 5 Rows)'
-        )}
-        {renderPagination(data.data_preview.length)}
-      </Card.Body>
-    </Card>
-  );
+  const renderPreview = () => {
+    if (!data || !data.data_preview.length) return null;
+  
+    return (
+      <Card>
+        <Card.Body>
+          {renderTable(
+            Object.keys(data.data_preview[0]), // Dynamically determine columns from the first row
+            paginate(data.data_preview, currentPage, itemsPerPage),
+            'Sample Data Preview (Paginated)'
+          )}
+          {renderPagination(data.data_preview.length)}
+        </Card.Body>
+      </Card>
+    );
+  };
+  
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p>Error: {error}</p>;
