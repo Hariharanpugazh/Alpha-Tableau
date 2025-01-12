@@ -9,9 +9,6 @@ urlpatterns = [
     path("forgot_password/", forgot_password, name="forgot_password"),
     path("reset_password/", reset_password, name="reset_password"),
     path("user_dashboard/<str:user_id>/", user_dashboard, name="user_dashboard"),
-    # path("upload_data/", upload_file, name="upload_data"),
-    # path("get_profiling_results/", get_profiling_results, name="get_profiling_results"),
     path('upload/', upload_and_process_data, name='upload_and_process_data'),
     path('visualize/<str:upload_id>/', get_visualization_data, name='get_visualization_data'),
-    # path('delete/', delete_profiling_result, name='delete_profiling_result'),
 ]
