@@ -16,12 +16,23 @@ import pandas as pd
 import numpy as np
 import chardet
 from scipy.stats import zscore
+import smtplib
+import random
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+import string
+from django.core.mail import send_mail
+from django.conf import settings
+
 
 # MongoDB connection
 client = MongoClient("mongodb+srv://ajaysihub:nrwULVWz8ysWBGK5@projects.dfhvc.mongodb.net/")
 db = client["kutty_tableau"]
 users_collection = db["users"]
 data_profiling_collection = db["Data Profile"]
+otp_collection = db["otp_verification"]
+
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -33,6 +44,7 @@ JWT_ALGORITHM = "HS256"
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+#jwt token
 def generate_tokens(user_id):
     """
     Generate JWT token for the given user.
@@ -46,6 +58,71 @@ def generate_tokens(user_id):
     token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return {"jwt": token}
 
+#otp
+def send_otp_email(email, otp):
+    sender_email = "kuttytableau@gmail.com"
+    sender_password = "qpwiuskxjnwpvsyv"
+    subject = "Your OTP Verification Code"
+    body = f"Your OTP code is {otp}. It is valid for 5 minutes."
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, email, msg.as_string())
+        server.quit()
+    except Exception as e:
+        raise Exception(f"Failed to send email: {e}")
+    
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_otp(request):
+    try:
+        data = request.data
+        email = data.get("email")
+        otp = int(data.get("otp"))  # Ensure OTP is treated as string
+
+        # Find OTP record in the database
+        record = otp_collection.find_one({"email": email, "otp": otp})
+        
+        # Debugging: Log the found record
+        print("Record found:", record)
+        
+        if not record:
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+
+        # Check if OTP is expired
+        if datetime.utcnow() > record["expires_at"]:
+            return Response({"error": "Invalid or expired OTP"}, status=400)
+
+        # Delete the OTP record after successful verification
+        otp_collection.delete_one({"_id": record["_id"]})
+        
+        # Hash the password and create the user
+        hashed_password = make_password(data.get("password"))
+        users_collection.insert_one({
+            "name": data.get("name"),
+            "email": email,
+            "password": hashed_password,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        })
+
+        return Response({"message": "User registered successfully"}, status=201)
+
+    except Exception as e:
+        print("Error occurred during OTP verification:", str(e))
+        return Response({"error": "Something went wrong. Please try again later."}, status=500)
+
+#login
 @api_view(["OPTIONS", "POST"])
 @permission_classes([AllowAny])
 def user_login(request):
@@ -101,9 +178,6 @@ def user_login(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def user_signup(request):
-    """
-    Handles user registration.
-    """
     try:
         data = request.data
         name = data.get("name")
@@ -119,25 +193,98 @@ def user_signup(request):
             logger.warning(f"Signup failed: Email {email} already exists")
             return Response({"error": "Email already exists"}, status=400)
 
-        # Save user in MongoDB
-        hashed_password = make_password(password)
-        user_data = {
-            "name": name,
-            "email": email,
-            "password": hashed_password,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-        }
-        result = users_collection.insert_one(user_data)
-        user_id = str(result.inserted_id)
+        # Generate and send OTP
+        otp = int(random.randint(100000, 999999))
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        send_otp_email(email, otp)  # Ensure send_email_otp function works as expected
 
-        logger.info(f"Signup successful for user: {email}")
-        return Response({"message": "Signup successful", "user_id": user_id}, status=201)
+        # Save OTP in database
+        otp_data = {
+            "email": email,
+            "otp": otp,
+            "timestamp": datetime.utcnow(),
+            "expires_at": expires_at,
+        }
+        otp_collection.insert_one(otp_data)
+
+        logger.info(f"OTP sent successfully to {email}")
+        return Response({"message": "OTP sent successfully"}, status=201)
 
     except Exception as e:
         logger.error(f"Error during signup: {e}")
         return Response({"error": "Something went wrong. Please try again later."}, status=500)
 
+
+#forgot password
+def generate_reset_token():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password(request):
+    try:
+        email = request.data.get('email')
+
+        # Check if the email exists in the system
+        user = users_collection.find_one({"email": email})
+        if not user:
+            return Response({"error": "Email not found"}, status=400)
+
+        # Generate reset token and store it
+        reset_token = generate_reset_token()
+
+        # Store token in the database with expiration time (e.g., 1 hour)
+        expiration_time = datetime.utcnow() + timedelta(hours=1)
+        users_collection.update_one(
+            {"email": email},
+            {"$set": {"password_reset_token": reset_token, "password_reset_expires": expiration_time}}
+        )
+
+        # Send the reset token via email (you can customize the email content)
+        send_mail(
+            'Password Reset Request',
+            f'Use this token to reset your password: {reset_token}',
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+        )
+
+        return Response({"message": "Password reset link sent to your email"}, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def reset_password(request):
+    try:
+        email = request.data.get('email')
+        token = request.data.get('token')
+        new_password = request.data.get('password')
+
+        # Find the user by email and validate token
+        user = users_collection.find_one({"email": email})
+        if not user or user.get('password_reset_token') != token:
+            return Response({"error": "Invalid token"}, status=400)
+
+        # Check if token is expired
+        if datetime.utcnow() > user.get('password_reset_expires'):
+            return Response({"error": "Token has expired"}, status=400)
+
+        # Hash the new password
+        hashed_password = make_password(new_password)
+
+        # Update the user's password and clear the reset token
+        users_collection.update_one(
+            {"email": email},
+            {"$set": {"password": hashed_password, "password_reset_token": None, "password_reset_expires": None}}
+        )
+
+        return Response({"message": "Password reset successful"}, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+#app
 @api_view(["GET"])
 def user_dashboard(request, user_id):
     """

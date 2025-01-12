@@ -38,6 +38,10 @@ const Dashboard: React.FC = () => {
     fetchUserData();
   }, [user_id, navigate]);
 
+  const handleLogout = () => {
+    navigate('/')
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       {/* Sidebar */}
@@ -46,7 +50,7 @@ const Dashboard: React.FC = () => {
           <div className="p-4 text-xl font-bold text-gray-700">Your Brand</div>
           <nav className="mt-6">
             <ul>
-            <li className="px-4 py-2 hover:bg-gray-200">
+              <li className="px-4 py-2 hover:bg-gray-200">
                 <a
                   href="#"
                   className="flex items-center"
@@ -78,8 +82,16 @@ const Dashboard: React.FC = () => {
         <div className="flex-1 flex flex-col">
           <header className="flex items-center justify-between bg-white shadow p-4">
             <h1 className="text-xl font-semibold text-gray-700">Dashboard</h1>
-            <div className="text-gray-700">
-              {userData ? `Hello, ${userData.name}` : "Loading..."}
+            <div className="flex items-center space-x-4">
+              <div className="text-gray-700">
+                {userData ? `Hello, ${userData.name}` : "Loading..."}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+              >
+                Logout
+              </button>
             </div>
           </header>
 

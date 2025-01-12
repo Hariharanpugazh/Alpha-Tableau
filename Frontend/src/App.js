@@ -6,6 +6,8 @@ import DataProfiling from "./pages/DataProfiling.tsx";
 import VisualizeResult from "./pages/VisualizeResult.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import DataProfile from "./pages/DataProfile.tsx";
+import ForgotPassword from "./pages/ForgotPasword.tsx";
+import ResetPassword from "./pages/ResetPassword.tsx";
 
 function App() {
   return (
@@ -13,6 +15,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot_password" element={<ForgotPassword />} />
+        <Route path="/reset_password" element={<ResetPassword />} />
         <Route path="/dataprofile/:user_id" element={<DataProfiling />} />
         <Route path="/visualize/:upload_id" element={<VisualizeResult />} />
         <Route path="/dashboard/:user_id" element={<Dashboard />} />
