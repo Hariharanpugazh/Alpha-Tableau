@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
+import Header from '../components/Header.tsx';
 
 const DataProfiling: React.FC = () => {
   const { user_id } = useParams<{ user_id: string }>(); // Extract user_id from URL
@@ -11,47 +12,13 @@ const DataProfiling: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setFile(acceptedFiles[0]);
       setError(null);
     }
   }, []);
-
-  useEffect(() => {
-    if (!user_id) {
-      setError("Invalid user ID.");
-      return;
-    }
-
-    // Fetch user data
-    const fetchUserData = async () => {
-      try {
-        const response = await fetch(
-          `http://localhost:8000/api/tableau/user_dashboard/${user_id}`,
-          {
-            method: "GET",
-            credentials: "include", // Include cookies for JWT
-          }
-        );
-
-        const data = await response.json();
-        if (response.ok) {
-          setUserData(data.data);
-        } else {
-          setError(data.error || "Failed to fetch user data.");
-          if (response.status === 404) {
-            navigate("/login"); // Redirect if user not found
-          }
-        }
-      } catch (err) {
-        setError("An error occurred. Please try again later.");
-      }
-    };
-
-    fetchUserData();
-  }, [user_id, navigate]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -132,13 +99,12 @@ const DataProfiling: React.FC = () => {
   console.log('Error:', error);
 
   return (
+    <div>
+      <Header />
+    
     <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-100 to-purple-100 p-4">
-      <header className="w-full max-w-5xl flex items-center justify-between bg-white shadow p-4 rounded-md">
-        <h1 className="text-xl font-semibold text-gray-700">Data Profiling</h1>
-        <div className="text-gray-700">
-          {userData ? `Hello, ${userData.name}` : error || "Loading..."}
-        </div>
-      </header>
+      
+
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 to-purple-100 p-4">
         <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6">
           <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">Data Profiling</h2>
@@ -227,6 +193,7 @@ const DataProfiling: React.FC = () => {
           </form>
         </div>
       </div>
+    </div>
     </div>
   );
 };
