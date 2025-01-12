@@ -5,13 +5,14 @@ import Signup from "./pages/Signup.tsx";
 import DataProfiling from "./pages/DataProfiling.tsx";
 import VisualizeResult from "./pages/VisualizeResult.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
-import DataProfile from "./pages/DataProfile.tsx";
+// import DataProfile from "./pages/DataProfile.tsx";
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/dataprofile/:user_id" element={<DataProfiling />} />
         <Route path="/visualize/:upload_id" element={<VisualizeResult />} />
