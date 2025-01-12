@@ -1,148 +1,200 @@
 import React, { useEffect, useState } from "react";
-
-interface ColumnSummary {
-  count: number;
-  unique: number;
-  top: string;
-  freq: number;
-  mean?: number;
-  std?: number;
-}
-
-interface ProfilingResult {
-  filename: string;
-  results: {
-    columns: string[];
-    row_count: number;
-    summary: Record<string, ColumnSummary>;
-  };
-}
+import { useParams } from "react-router-dom";
 
 const VisualizeResult: React.FC = () => {
-  const [profilingResult, setProfilingResult] = useState<ProfilingResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { upload_id } = useParams<{ upload_id: string }>(); // Extract upload_id from URL
+  const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<string>("overview"); // Default tab
+  const [currentPage, setCurrentPage] = useState<number>(1); // Pagination
 
-  const fetchVisualizationData = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("http://localhost:8000/api/tableau/results/");
-      const text = await response.text();
-      
-      // Replace NaN with null to make it valid JSON
-      const validJSONString = text.replace(/:\s*NaN/g, ': null');
-      const data = JSON.parse(validJSONString);
+  const itemsPerPage = 10; // Number of rows per page
 
-      if (response.ok && data.data && data.data.length > 0) {
-        setProfilingResult(data.data[0]); // Display the first profiling result
-      } else {
-        setError(data.error || "No profiling data available.");
+  useEffect(() => {
+    const fetchVisualizationData = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:8000/api/tableau/visualize/${upload_id}`,
+          {
+            method: "GET",
+          }
+        );
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || "Failed to fetch data");
+        }
+
+        const result = await response.json();
+        setData(result.data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching profiling data:", error);
-      setError("An error occurred while fetching the data.");
-    } finally {
-      setIsLoading(false);
+    };
+
+    fetchVisualizationData();
+  }, [upload_id]);
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
+
+  // Pagination Logic
+  const paginate = (array: any[]) => {
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return array.slice(start, end);
+  };
+
+  const renderTable = (headers: string[], rows: any[]) => (
+    <div className="overflow-x-auto">
+      <table className="min-w-full bg-white border">
+        <thead>
+          <tr>
+            {headers.map((header) => (
+              <th
+                key={header}
+                className="px-4 py-2 border bg-gray-200 text-gray-700"
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {paginate(rows).map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {headers.map((header, colIndex) => (
+                <td key={colIndex} className="px-4 py-2 border">
+                  {row[header] || "N/A"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderFormattedJSON = (jsonData: any) => (
+    <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-sm">
+      {JSON.stringify(jsonData, null, 2)}
+    </pre>
+  );
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case "overview":
+        return (
+          <div>
+            <p>
+              <strong>Columns:</strong> {data.data_overview.columns.join(", ")}
+            </p>
+            <p>
+              <strong>Row Count:</strong> {data.data_overview.row_count}
+            </p>
+            <p>
+              <strong>Data Types:</strong>{" "}
+              {renderFormattedJSON(data.data_overview.data_types)}
+            </p>
+          </div>
+        );
+      case "summary":
+        return renderTable(
+          Object.keys(data.summary),
+          Object.values(data.summary)
+        );
+      case "relationships":
+        return renderTable(
+          Object.keys(data.relationships),
+          Object.values(data.relationships).map((row: any) =>
+            Object.fromEntries(
+              Object.entries(row).map(([key, value]) => [
+                key,
+                (value as number).toFixed(2),
+              ])
+            )
+          )
+        );
+      case "quality":
+        return (
+          <div>
+            <p>
+              <strong>Duplicates:</strong> {data.data_quality.duplicates}
+            </p>
+            <p>
+              <strong>Null Values:</strong>{" "}
+              {renderFormattedJSON(data.data_quality.null_values)}
+            </p>
+            <p>
+              <strong>Outliers:</strong>{" "}
+              {renderFormattedJSON(data.data_quality.outliers)}
+            </p>
+          </div>
+        );
+      case "preview":
+        return renderTable(
+          Object.keys(data.data_preview[0]),
+          data.data_preview
+        );
+      default:
+        return <p>Select a tab to view content.</p>;
     }
   };
 
-  useEffect(() => {
-    fetchVisualizationData();
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="text-2xl font-semibold text-gray-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="text-2xl font-semibold text-red-600">{error}</div>
-      </div>
-    );
-  }
-
-  if (!profilingResult) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="text-2xl font-semibold text-gray-600">No data available.</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Data Profiling Results</h1>
-        
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
-          <div className="px-4 py-5 sm:px-6">
-            <h2 className="text-xl font-semibold text-gray-900">File Information</h2>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-            <dl className="sm:divide-y sm:divide-gray-200">
-              <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Filename</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{profilingResult.filename}</dd>
-              </div>
-              <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Row Count</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{profilingResult.results.row_count}</dd>
-              </div>
-              <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Columns</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {profilingResult.results.columns.join(", ")}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
+    <div className="flex flex-col items-center min-h-screen bg-gray-100 p-4">
+      <header className="w-full max-w-6xl flex items-center justify-between bg-white shadow p-4 rounded-md">
+        <h1 className="text-xl font-semibold text-gray-700">
+          Visualization Results
+        </h1>
+      </header>
 
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h2 className="text-xl font-semibold text-gray-900">Column Summary</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Column</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unique</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Top Value</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mean</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Std Dev</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {Object.entries(profilingResult.results.summary).map(([column, details]) => (
-                  <tr key={column}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{column}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{details.count}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{details.unique}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      <div className="max-w-xs overflow-hidden overflow-ellipsis">{details.top}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{details.freq}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {details.mean !== null ? details.mean?.toFixed(2) : 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {details.std !== null ? details.std?.toFixed(2) : 'N/A'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* Tab Navigation */}
+      <nav className="w-full max-w-6xl flex justify-around bg-white shadow p-4 mt-6 rounded-md">
+        {["overview", "summary", "relationships", "quality", "preview"].map(
+          (tab) => (
+            <button
+              key={tab}
+              className={`px-4 py-2 text-gray-700 ${
+                activeTab === tab ? "border-b-2 border-blue-500" : ""
+              }`}
+              onClick={() => {
+                setActiveTab(tab);
+                setCurrentPage(1); // Reset pagination on tab change
+              }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          )
+        )}
+      </nav>
+
+      <div className="w-full max-w-6xl bg-white rounded-lg shadow-md p-6 mt-6">
+        {renderContent()}
       </div>
+
+      {/* Pagination Controls */}
+      {["summary", "relationships", "preview"].includes(activeTab) && (
+        <div className="flex justify-between w-full max-w-6xl mt-4">
+          <button
+            disabled={currentPage === 1}
+            className="px-4 py-2 bg-gray-300 rounded"
+            onClick={() => setCurrentPage((prev) => prev - 1)}
+          >
+            Previous
+          </button>
+          <button
+            disabled={currentPage * itemsPerPage >= (data[activeTab]?.length || 0)}
+            className="px-4 py-2 bg-gray-300 rounded"
+            onClick={() => setCurrentPage((prev) => prev + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 };

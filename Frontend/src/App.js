@@ -13,8 +13,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/dataprofile" element={<DataProfiling />} />
-        <Route path="/visual" element={<VisualizeResult />} />
+        <Route path="/dataprofile/:user_id" element={<DataProfiling />} />
+        <Route path="/visualize/:upload_id" element={<VisualizeResult />} />
         <Route path="/dashboard/:user_id" element={<Dashboard />} />
         {/* <Route path="/dataprofile" element={<DataProfile />} /> */}
       </Routes>
