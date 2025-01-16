@@ -7,7 +7,8 @@ import ResetPassword from "./pages/ResetPassword.tsx";
 import DataProfiling from "./pages/DataProfiling.tsx";
 import VisualizeResult from "./pages/VisualizeResult.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
-// import DataProfile from "./pages/DataProfile.tsx";
+import DataInsights from "./pages/DataInsights.tsx";
+import VisualizeInsights from "./pages/VisualizeInsights.tsx";
 
 function App() {
   return (
@@ -21,7 +22,10 @@ function App() {
         <Route path="/dataprofile/:user_id" element={<DataProfiling />} />
         <Route path="/visualize/:upload_id" element={<VisualizeResult />} />
         <Route path="/dashboard/:user_id" element={<Dashboard />} />
-        {/* <Route path="/dataprofile" element={<DataProfile />} /> */}
+
+        {/* Data Insights */}
+        <Route path="/datainsights/:user_id" element={<DataInsights />} />
+        <Route path="/visualize/insights/:upload_id" element={<VisualizeInsights />} />
       </Routes>
     </Router>
   );
