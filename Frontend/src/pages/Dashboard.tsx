@@ -43,8 +43,12 @@ const Dashboard: React.FC = () => {
                   </a>
                 </li>
                 <li className="px-4 py-2 hover:bg-gray-200">
-                  <a href="#" className="flex items-center">
-                    <span className="text-gray-700">Datasets</span>
+                <a
+                    href="#"
+                    className="flex items-center"
+                    onClick={() => navigate(`/datainsights/${user_id}`)}
+                  >
+                    <span className="text-gray-700">Data Insights</span>
                   </a>
                 </li>
                 <li className="px-4 py-2 hover:bg-gray-200">
