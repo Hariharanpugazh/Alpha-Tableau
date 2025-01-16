@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const ForgotPasswordSchema = Yup.object().shape({
   email: Yup.string().email('Invalid email').required('Required'),
@@ -10,13 +10,14 @@ const ForgotPasswordSchema = Yup.object().shape({
 const ForgotPassword: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
     try {
-      const response = await fetch("http://localhost:8000/api/tableau/forgot_password/", {
-        method: "POST",
+      const response = await fetch('http://localhost:8000/api/tableau/forgot_password/', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(values),
       });
@@ -24,11 +25,14 @@ const ForgotPassword: React.FC = () => {
       const data = await response.json();
       if (response.ok) {
         setMessage(data.message);
+        setTimeout(() => {
+          navigate('/reset_password'); // Navigate to reset password page after 3 seconds
+        }, 3000);
       } else {
-        setError(data.error || "Request failed");
+        setError(data.error || 'Request failed');
       }
     } catch (error) {
-      setError("An error occurred. Please try again.");
+      setError('An error occurred. Please try again.');
     }
     setSubmitting(false);
   };
@@ -54,7 +58,9 @@ const ForgotPassword: React.FC = () => {
                     className="w-full px-4 py-2 rounded-full border focus:outline-none focus:ring-2 focus:ring-indigo-600"
                     placeholder="Email"
                   />
-                  {errors.email && touched.email && <div className="text-red-500 text-sm mt-1">{errors.email}</div>}
+                  {errors.email && touched.email && (
+                    <div className="text-red-500 text-sm mt-1">{errors.email}</div>
+                  )}
                 </div>
                 <button
                   type="submit"

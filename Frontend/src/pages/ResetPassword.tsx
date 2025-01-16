@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const ResetPasswordSchema = Yup.object().shape({
+  email: Yup.string().email('Invalid email address').required('Required'),
   token: Yup.string().required('Required'),
   password: Yup.string().required('Required'),
   confirm_password: Yup.string()
@@ -14,25 +15,36 @@ const ResetPasswordSchema = Yup.object().shape({
 const ResetPassword: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleSubmit = async (values: any, { setSubmitting }: any) => {
+    setMessage(null);
+    setError(null);
+
     try {
-      const response = await fetch("http://localhost:8000/api/tableau/reset_password/", {
-        method: "POST",
+      const response = await fetch('http://localhost:8000/api/tableau/reset_password/', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({
+          email: values.email,
+          token: values.token,
+          password: values.password,
+        }),
       });
 
       const data = await response.json();
       if (response.ok) {
         setMessage(data.message);
+        setTimeout(() => {
+          navigate('/'); // Navigate to login page after 3 seconds
+        }, 3000);
       } else {
-        setError(data.error || "Reset failed");
+        setError(data.error || 'Reset failed');
       }
     } catch (error) {
-      setError("An error occurred. Please try again.");
+      setError('An error occurred. Please try again.');
     }
     setSubmitting(false);
   };
@@ -45,7 +57,7 @@ const ResetPassword: React.FC = () => {
           {error && <div className="text-red-500 text-center mb-4">{error}</div>}
           {message && <div className="text-green-500 text-center mb-4">{message}</div>}
           <Formik
-            initialValues={{ token: '', password: '', confirm_password: '' }}
+            initialValues={{ email: '', token: '', password: '', confirm_password: '' }}
             validationSchema={ResetPasswordSchema}
             onSubmit={handleSubmit}
           >
@@ -53,12 +65,25 @@ const ResetPassword: React.FC = () => {
               <Form className="space-y-4">
                 <div>
                   <Field
+                    name="email"
+                    type="email"
+                    className="w-full px-4 py-2 rounded-full border focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    placeholder="Enter your email"
+                  />
+                  {errors.email && touched.email && (
+                    <div className="text-red-500 text-sm mt-1">{errors.email}</div>
+                  )}
+                </div>
+                <div>
+                  <Field
                     name="token"
                     type="text"
                     className="w-full px-4 py-2 rounded-full border focus:outline-none focus:ring-2 focus:ring-indigo-600"
                     placeholder="Enter your reset token"
                   />
-                  {errors.token && touched.token && <div className="text-red-500 text-sm mt-1">{errors.token}</div>}
+                  {errors.token && touched.token && (
+                    <div className="text-red-500 text-sm mt-1">{errors.token}</div>
+                  )}
                 </div>
                 <div>
                   <Field
@@ -67,7 +92,9 @@ const ResetPassword: React.FC = () => {
                     className="w-full px-4 py-2 rounded-full border focus:outline-none focus:ring-2 focus:ring-indigo-600"
                     placeholder="New password"
                   />
-                  {errors.password && touched.password && <div className="text-red-500 text-sm mt-1">{errors.password}</div>}
+                  {errors.password && touched.password && (
+                    <div className="text-red-500 text-sm mt-1">{errors.password}</div>
+                  )}
                 </div>
                 <div>
                   <Field
@@ -76,7 +103,9 @@ const ResetPassword: React.FC = () => {
                     className="w-full px-4 py-2 rounded-full border focus:outline-none focus:ring-2 focus:ring-indigo-600"
                     placeholder="Confirm new password"
                   />
-                  {errors.confirm_password && touched.confirm_password && <div className="text-red-500 text-sm mt-1">{errors.confirm_password}</div>}
+                  {errors.confirm_password && touched.confirm_password && (
+                    <div className="text-red-500 text-sm mt-1">{errors.confirm_password}</div>
+                  )}
                 </div>
                 <button
                   type="submit"
