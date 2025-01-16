@@ -313,41 +313,54 @@ def verify_otp(request):
 
 #forgot password
 def generate_reset_token():
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+    return str(random.randint(10000, 99999))  # Generates a random 5-digit number
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def forgot_password(request):
     try:
         email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required"}, status=400)
 
         # Check if the email exists in the system
         user = users_collection.find_one({"email": email})
         if not user:
-            return Response({"error": "Email not found"}, status=400)
+            return Response({"error": "Email not found"}, status=404)
 
-        # Generate reset token and store it
+        # Generate reset token (5-digit number)
         reset_token = generate_reset_token()
 
-        # Store token in the database with expiration time (e.g., 1 hour)
+        # Store the token in the database with expiration (e.g., 1 hour)
         expiration_time = datetime.utcnow() + timedelta(hours=1)
         users_collection.update_one(
             {"email": email},
-            {"$set": {"password_reset_token": reset_token, "password_reset_expires": expiration_time}}
+            {
+                "$set": {
+                    "password_reset_token": reset_token,
+                    "password_reset_expires": expiration_time,
+                }
+            }
         )
 
-        # Send the reset token via email (you can customize the email content)
-        send_mail(
-            'Password Reset Request',
-            f'Use this token to reset your password: {reset_token}',
-            settings.DEFAULT_FROM_EMAIL,
-            [email],
-        )
+        # Send the reset token via email
+        try:
+            send_mail(
+                'Password Reset Request',
+                f'Your password reset token is: {reset_token}. This token is valid for 1 hour.',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+            )
+        except Exception as e:
+            return Response({"error": f"Failed to send email: {str(e)}"}, status=500)
 
-        return Response({"message": "Password reset link sent to your email"}, status=200)
+        return Response({"message": "Password reset token sent to your email."}, status=200)
 
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        logger.error(f"Error in forgot_password: {e}")
+        return Response({"error": "An unexpected error occurred"}, status=500)
+
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -357,29 +370,39 @@ def reset_password(request):
         token = request.data.get('token')
         new_password = request.data.get('password')
 
-        # Find the user by email and validate token
+        if not email or not token or not new_password:
+            return Response({"error": "Email, token, and password are required"}, status=400)
+
+        # Find the user and validate the reset token
         user = users_collection.find_one({"email": email})
-        if not user or user.get('password_reset_token') != token:
+        if not user:
+            return Response({"error": "User not found"}, status=404)
+
+        if user.get('password_reset_token') != token:
             return Response({"error": "Invalid token"}, status=400)
 
-        # Check if token is expired
-        if datetime.utcnow() > user.get('password_reset_expires'):
+        # Check if the token has expired
+        if datetime.utcnow() > user.get('password_reset_expires', datetime.min):
             return Response({"error": "Token has expired"}, status=400)
 
-        # Hash the new password
+        # Hash the new password and update the user's record
         hashed_password = make_password(new_password)
-
-        # Update the user's password and clear the reset token
         users_collection.update_one(
             {"email": email},
-            {"$set": {"password": hashed_password, "password_reset_token": None, "password_reset_expires": None}}
+            {
+                "$set": {
+                    "password": hashed_password,
+                    "password_reset_token": None,
+                    "password_reset_expires": None,
+                }
+            }
         )
 
-        return Response({"message": "Password reset successful"}, status=200)
+        return Response({"message": "Password reset successful."}, status=200)
 
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
- 
+        logger.error(f"Error in reset_password: {e}")
+        return Response({"error": "An unexpected error occurred"}, status=500)
 
 @api_view(["GET"])
 def user_dashboard(request, user_id):
